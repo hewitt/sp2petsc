@@ -18,6 +18,7 @@ __author__ = "Rich Hewitt"
 import sys
 import petsc4py
 import slepc4py
+import time
 
 # these 2 lines need to be here despite it being against the usual code style
 petsc4py.init(sys.argv)
@@ -27,6 +28,11 @@ from petsc4py import PETSc
 from slepc4py import SLEPc
 import scipy as sp
 import numpy as np
+
+
+def garbage_cleanup():
+    PETSc.garbage_view()
+    PETSc.garbage_cleanup()
 
 
 class PETScSparseLinearSystem:
@@ -54,9 +60,11 @@ class PETScSparseLinearSystem:
         self._N = A.shape[0]
         self._A = PETSc.Mat().createAIJ(size=A.shape, csr=(A.indptr, A.indices, A.data))
         self._b = PETSc.Vec().createWithArray(b)
+        self._A.setFromOptions()
+        self._b.setFromOptions()
         self._ksp = PETSc.KSP().create()
         # set the matrix to be used in the linear system
-        self._ksp.setOperators(self._A)
+        self._ksp.setOperators(self._A)  # , self._A)
         # set command line options
         self._ksp.setFromOptions()
 
@@ -86,11 +94,17 @@ class PETScSparseLinearSystem:
         # return the solution as an array
         return petsc_x.getArray()
 
+    def __del__(self):
+        """Destructor is explicitly defined to clean up allocations
+        made by PETSc4py.
+        """
+        PETSc.garbage_cleanup()
+
 
 class SLEPcGeneralisedEigenSystem:
     """A class for a generalised non-symmetric eigenvalue problem 'A @
     x = omega B @ x' for eigenvalues 'omega' and eigenvectors 'x'. It
-    is instantiated from 2 SciPy sparse matrices A and B. These are
+    is instantiated from two SciPy sparse matrices A and B. These are
     then converted to their PETSc SEQUENTIAL counterparts in the
     constructor. In many applications 'B' has zero rows so requires
     some problem specification via the command line arguments. For
@@ -106,7 +120,7 @@ class SLEPcGeneralisedEigenSystem:
     location of 'omega=10'. Note: eps_view reports verbose settings.
     """
 
-    def __init__(self, A, B):
+    def __init__(self, A, B, target=0):
         try:
             # fail if the A or B matrix is not a scipy sparse matrix
             assert sp.sparse.isspmatrix(A)
@@ -127,22 +141,23 @@ class SLEPcGeneralisedEigenSystem:
         self._B = PETSc.Mat().createAIJ(size=B.shape, csr=(B.indptr, B.indices, B.data))
         # eigenvalue problem solver
         self._eps = SLEPc.EPS().create()
-        self._eps.setOperators(self._A,self._B)
+        self._eps.setOperators(self._A, self._B)
         self._eps.setProblemType(SLEPc.EPS.ProblemType.GNHEP)
-        self._eps.setFromOptions()
+        self._eps.setTarget(target)
+        self._eps.setFromOptions()  # allow overide from CLI options
         # spectral transformation
         self._st = self._eps.getST()
-        self._st.setType( SLEPc.ST.Type.SINVERT)
+        self._st.setType(SLEPc.ST.Type.SINVERT)
         # Krylov object
         self._ksp = self._st.getKSP()
         self._ksp.setOperators(self._A, self._B)
         self._ksp.setType(PETSc.KSP.Type.PREONLY)
         # preconditioner
         self._pc = self._ksp.getPC()
-        self._pc.setType( PETSc.PC.Type.LU)
-        self._pc.setFactorSolverType( PETSc.Mat.SolverType.MUMPS)
+        self._pc.setType(PETSc.PC.Type.LU)
+        self._pc.setFactorSolverType(PETSc.Mat.SolverType.SUPERLU_DIST)
         self._pc.setFactorSetUpSolverType()
-        
+
     def linear_eigensolve(self, info=True):
         """Solve the generalised linear eigenvalue problem. The
         resulting array of eigenvalues and eigenvectors are stored as
@@ -157,9 +172,7 @@ class SLEPcGeneralisedEigenSystem:
         if info:
             # output some results
             print("[RESULT]")
-            print(
-                f"Number of iterations of the method: {self._eps.getIterationNumber()}"
-            )
+            print(f"Number of iterations of the method: {self._eps.getIterationNumber()}")
             print(f"Solution method: {self._eps.getType()}")
             # getDimensions returns a tuple, the first entry is the number of requested eigenvalues
             print(f"Number of requested eigenvalues: {self._eps.getDimensions()[0]}")
@@ -180,17 +193,12 @@ class SLEPcGeneralisedEigenSystem:
             for i in range(nconv):
                 # getEigenpair: returns the complex eigenvalue, but allocates the eigenvector via xr & xi arguments
                 self.eigenvalues[i] = self._eps.getEigenpair(i, petsc_xr, petsc_xi)
+                print("eigenvalue:")
+                print(self.eigenvalues[i])
                 # get the i-th eigenvector from SLEPc and move into an array
-                self.eigenvectors[i, :] = (
-                    petsc_xr.getArray() + petsc_xi.getArray() * EYE
-                )
+                self.eigenvectors[i, :] = petsc_xr.getArray() + petsc_xi.getArray() * EYE
                 # normalise the eigenvector so the peak value is 1
-                self.eigenvectors[i, :] /= np.linalg.norm(
-                    self.eigenvectors[i], ord=np.inf
-                )
+                self.eigenvectors[i, :] /= np.linalg.norm(self.eigenvectors[i], ord=np.inf)
                 error = self._eps.computeError(i)
-                print(
-                    " %9f%+9f j  %12g"
-                    % (self.eigenvalues[i].real, self.eigenvalues[i].imag, error)
-                )
+                print(" %9f%+9f j  %12g" % (self.eigenvalues[i].real, self.eigenvalues[i].imag, error))
             print("")
