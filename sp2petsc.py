@@ -18,7 +18,6 @@ __author__ = "Rich Hewitt"
 import sys
 import petsc4py
 import slepc4py
-import time
 
 # these 2 lines need to be here despite it being against the usual code style
 petsc4py.init(sys.argv)
@@ -91,6 +90,11 @@ class PETScSparseLinearSystem:
         # solve the linear system, for the defined RHS
         # solution is in petsc_x
         self._ksp.solve(self._b, petsc_x)
+        if self._ksp.reason < 0:
+            print("PETSc linear solver failed to converge.")
+            print(" Check matrix and workspace allocation.")
+            print(" e.g. -mat_mumps_icntl_14 50    if MUMPS.")
+            sys.exit()
         # return the solution as an array
         return petsc_x.getArray()
 
@@ -172,7 +176,9 @@ class SLEPcGeneralisedEigenSystem:
         if info:
             # output some results
             print("[RESULT]")
-            print(f"Number of iterations of the method: {self._eps.getIterationNumber()}")
+            print(
+                f"Number of iterations of the method: {self._eps.getIterationNumber()}"
+            )
             print(f"Solution method: {self._eps.getType()}")
             # getDimensions returns a tuple, the first entry is the number of requested eigenvalues
             print(f"Number of requested eigenvalues: {self._eps.getDimensions()[0]}")
@@ -196,9 +202,16 @@ class SLEPcGeneralisedEigenSystem:
                 print("eigenvalue:")
                 print(self.eigenvalues[i])
                 # get the i-th eigenvector from SLEPc and move into an array
-                self.eigenvectors[i, :] = petsc_xr.getArray() + petsc_xi.getArray() * EYE
+                self.eigenvectors[i, :] = (
+                    petsc_xr.getArray() + petsc_xi.getArray() * EYE
+                )
                 # normalise the eigenvector so the peak value is 1
-                self.eigenvectors[i, :] /= np.linalg.norm(self.eigenvectors[i], ord=np.inf)
+                self.eigenvectors[i, :] /= np.linalg.norm(
+                    self.eigenvectors[i], ord=np.inf
+                )
                 error = self._eps.computeError(i)
-                print(" %9f%+9f j  %12g" % (self.eigenvalues[i].real, self.eigenvalues[i].imag, error))
+                print(
+                    " %9f%+9f j  %12g"
+                    % (self.eigenvalues[i].real, self.eigenvalues[i].imag, error)
+                )
             print("")
