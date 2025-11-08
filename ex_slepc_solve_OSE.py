@@ -1,11 +1,11 @@
 """A moderate (complex) generalised eigenproblem 'A@x=c B@x' where omega are
-the eigenvalues. 
+the eigenvalues.
 
 Solves the following linear eigenvalue problem for values c
 that satisfy :
   phi''(y) - alpha^2 phi(y) - psi(y) = 0
   psi''(y) - alpha^2 psi(y) - i alpha Re { ( U(y) - c ) psi(y) - U''(y) } = 0
- subject to phi = \phi' = 0 on y = -1 and +1, where
+ subject to phi = phi' = 0 on y = -1 and +1, where
  alpha = 1.02, Re = 5772.2 and U(y) = 1 - y^2.
 
  The matrix problem is constructed manually in this case, using second-order
@@ -15,8 +15,9 @@ that satisfy :
  exists with very small imaginary part.
 
 
-Run: python ex_slepc_solve_harmonic.py -st_type sinvert -eps_view
+Run: python ex_slepc_solve_harmonic.py -st_type sinvert -eps_view -eps_nev 30
 """
+
 import scipy as sp
 import numpy as np
 import matplotlib.pyplot as plt
@@ -94,4 +95,4 @@ ax[0].legend()
 ax[1].plot(system.eigenvalues[:].real, system.eigenvalues[:].imag, "bo")
 
 
-plt.show()
+plt.savefig("OSE.pdf")
