@@ -63,7 +63,7 @@ class PETScSparseLinearSystem:
         self._b.setFromOptions()
         self._ksp = PETSc.KSP().create()
         # set the matrix to be used in the linear system
-        self._ksp.setOperators(self._A)  # , self._A)
+        self._ksp.setOperators(self._A)
         # set command line options
         self._ksp.setFromOptions()
 
